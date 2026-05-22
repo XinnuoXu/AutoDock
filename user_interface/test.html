@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Load Button</title>
+</head>
+<body>
+    <button id="loadSequenceBtn">Test Load Button</button>
+    <script>
+        const loadSequenceBtn = document.getElementById('loadSequenceBtn');
+        console.log('Button element:', loadSequenceBtn);
+
+        loadSequenceBtn.addEventListener('click', function() {
+            alert('Button clicked!');
+            console.log('Button was clicked');
+        });
+
+        console.log('Event listener attached');
+    </script>
+</body>
+</html>
