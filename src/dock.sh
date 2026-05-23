@@ -1,6 +1,29 @@
 #!/bin/zsh
 # Batch docking script for AutoDock Vina
-# Docks DiPU ligand against all protein mutant structures
+# Docks DiPU ligand against all protein mutant structures in a specified folder
+
+# Check if folder name argument is provided
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 <folder_name>"
+    echo ""
+    echo "Example: $0 Fold_batch_001_pdbqt"
+    echo ""
+    echo "Available folders:"
+    ls -d protein_folds/*_pdbqt 2>/dev/null | xargs -n 1 basename
+    exit 1
+fi
+
+FOLDER_NAME="$1"
+RECEPTOR_DIR="protein_folds/$FOLDER_NAME"
+
+# Check if the specified folder exists
+if [ ! -d "$RECEPTOR_DIR" ]; then
+    echo "Error: Directory not found: $RECEPTOR_DIR"
+    echo ""
+    echo "Available folders:"
+    ls -d protein_folds/*_pdbqt 2>/dev/null | xargs -n 1 basename
+    exit 1
+fi
 
 # Set path to conda autodock environment
 CONDA_ENV="$HOME/miniconda3/envs/autodock"
@@ -35,6 +58,7 @@ fi
 echo "======================================================================="
 echo "AutoDock Vina Batch Docking"
 echo "======================================================================="
+echo "Receptor directory: $RECEPTOR_DIR"
 echo "Ligand: $LIGAND"
 echo "Binding site center: ($CENTER_X, $CENTER_Y, $CENTER_Z)"
 echo "Binding site size: ${SIZE_X}x${SIZE_Y}x${SIZE_Z} Å"
@@ -43,11 +67,11 @@ echo "======================================================================="
 echo ""
 
 # Counter for progress tracking
-total_receptors=$(find protein_folds/*_pdbqt -name "*.pdbqt" 2>/dev/null | wc -l | tr -d ' ')
+total_receptors=$(find "$RECEPTOR_DIR" -name "*.pdbqt" 2>/dev/null | wc -l | tr -d ' ')
 current=0
 
 if [ "$total_receptors" -eq 0 ]; then
-    echo "Error: No PDBQT receptor files found in protein_folds/*_pdbqt/"
+    echo "Error: No PDBQT receptor files found in $RECEPTOR_DIR"
     echo "Please run: python src/convert_pdb_to_pdbqt.py first"
     exit 1
 fi
@@ -55,8 +79,8 @@ fi
 echo "Found $total_receptors receptor(s) to dock"
 echo ""
 
-# Loop through all PDBQT files in all batch folders
-for receptor in protein_folds/*_pdbqt/*.pdbqt; do
+# Loop through all PDBQT files in the specified folder
+for receptor in "$RECEPTOR_DIR"/*.pdbqt; do
     if [ ! -f "$receptor" ]; then
         continue
     fi
@@ -69,8 +93,9 @@ for receptor in protein_folds/*_pdbqt/*.pdbqt; do
 
     echo "[$current/$total_receptors] Docking: $basename"
     echo "  Receptor: $receptor"
+    echo "  Progress:"
 
-    # Run vina docking (capture output to log file)
+    # Run vina docking (show progress, save to log)
     "$VINA" \
         --receptor "$receptor" \
         --ligand "$LIGAND" \
@@ -82,7 +107,7 @@ for receptor in protein_folds/*_pdbqt/*.pdbqt; do
         --size_z $SIZE_Z \
         --exhaustiveness $EXHAUSTIVENESS \
         --out "docking_results/${basename}_docked.pdbqt" \
-        > "docking_results/${basename}_log.txt" 2>&1
+        2>&1 | tee "docking_results/${basename}_log.txt"
 
     # Check if vina succeeded by checking if output file was created
     if [ -f "docking_results/${basename}_docked.pdbqt" ] && [ -s "docking_results/${basename}_docked.pdbqt" ]; then

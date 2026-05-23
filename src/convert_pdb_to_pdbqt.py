@@ -44,7 +44,7 @@ def find_pdb_files(folder: Path) -> List[Path]:
 
         # Only include rank_001 files (highest confidence models)
         # This skips rank_002, rank_003, rank_004, rank_005
-        if "rank_001" in pdb_file.name and pdb_file.is_file():
+        if "rank_000" in pdb_file.name and pdb_file.is_file():
             pdb_files.append(pdb_file)
         # Also include files without rank in the name (e.g., single model predictions)
         elif "rank_" not in pdb_file.name and pdb_file.is_file():
