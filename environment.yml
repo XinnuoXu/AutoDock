@@ -1,0 +1,46 @@
+name: autodock
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+
+variables:
+  CONDA_SUBDIR: osx-64
+
+dependencies:
+  - python=3.12
+  # Core dependencies from conda
+  - boost-cpp=1.78.0
+  - boost=1.78.0  # Note: May pull conda numpy 1.26.4, but pip numpy 2.4.6 will override it
+  - swig=4.2.0
+  - openblas
+  - blas
+  # Note: autodock-vina from bioconda has an outdated binary (i386/PowerPC)
+  # that doesn't work on Apple Silicon. The vina binary in this repo was
+  # built from source (v1.2.5). See SETUP.md for build instructions.
+  # - autodock-vina=1.1.2  # DO NOT USE - broken on Apple Silicon
+  # Pip packages
+  - pip
+  - pip:
+    # Web Interface
+    - Flask==3.0.0
+    - Jinja2==3.1.6
+    - Werkzeug==3.1.8
+    - click==8.4.1
+    - itsdangerous==2.2.0
+    - MarkupSafe==3.0.3
+    - blinker==1.9.0
+    # Molecular Docking & Structure
+    - vina==1.2.7
+    - meeko==0.7.1
+    - rdkit==2025.9.3
+    - prody==2.6.1
+    - biopython==1.87
+    - gemmi==0.7.5
+    # Scientific Computing
+    - numpy==2.4.6
+    - scipy==1.17.1
+    - Pillow==12.2.0
+    # Utilities
+    - pyparsing==3.1.1
+    - packaging==26.2

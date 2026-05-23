@@ -1,1 +1,25 @@
+# Web Interface
 Flask==3.0.0
+Jinja2==3.1.6
+Werkzeug==3.1.8
+click==8.4.1
+itsdangerous==2.2.0
+MarkupSafe==3.0.3
+blinker==1.9.0
+
+# Molecular Docking & Structure
+vina==1.2.7
+meeko==0.7.1
+rdkit==2025.9.3
+prody==2.6.1
+biopython==1.87
+gemmi==0.7.5
+
+# Scientific Computing
+numpy==2.4.6
+scipy==1.17.1
+Pillow==12.2.0
+
+# Utilities
+pyparsing==3.1.1
+packaging==26.2

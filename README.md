@@ -9,7 +9,8 @@ This project provides a complete workflow for:
 2. **Generating mutations** - Automated creation of all single-point mutations at selected positions
 3. **Preparing for structure prediction** - Converting mutations to FASTA format for AlphaFold/ColabFold
 4. **Structure prediction** - Using ColabFold batch notebooks on Google Colab
-5. **Molecular docking** - Preparing predicted structures for AutoDock analysis
+5. **Converting to PDBQT** - Automated batch conversion of predicted PDB structures to PDBQT format
+6. **Molecular docking** - Running AutoDock Vina docking with prepared structures
 
 ## Features
 
@@ -17,6 +18,7 @@ This project provides a complete workflow for:
 - Automatic generation of all 20 amino acid substitutions at selected positions
 - FASTA batch file generation optimized for Google Colab (30 sequences per file)
 - Integration with ColabFold for free GPU-accelerated structure prediction
+- Automated batch conversion of PDB structures to PDBQT format using OpenBabel
 - Organized file management and JSON-based data storage
 
 ---
@@ -25,25 +27,63 @@ This project provides a complete workflow for:
 
 ### 1. Environment Setup
 
-Create and activate a conda environment:
+**For Apple Silicon Macs (M1/M2/M3):**
 
 ```bash
-# Create new conda environment with Python 3.10+
-conda create -n autodock python=3.10
+# Install Rosetta 2 if not already installed
+softwareupdate --install-rosetta
 
-# Activate the environment
+# Create x86_64 environment (required for AutoDock Vina)
+CONDA_SUBDIR=osx-64 conda env create -f environment.yml
 conda activate autodock
 ```
 
-### 2. Install Dependencies
+**For Intel Macs / Linux:**
 
 ```bash
-# Install required packages
+# Create environment from YAML file
+conda env create -f environment.yml
+conda activate autodock
+```
+
+**OR install manually:**
+
+```bash
+# Create environment
+conda create -n autodock python=3.12
+conda activate autodock
+
+# For Apple Silicon, force x86_64 architecture
+conda config --env --set subdir osx-64  # Apple Silicon only
+
+# Add channels
+conda config --add channels conda-forge
+conda config --add channels bioconda
+
+# Install dependencies
+conda install -c conda-forge boost-cpp swig
+conda install -c bioconda autodock-vina
 pip install -r requirements.txt
 ```
 
-Required packages:
-- Flask==3.0.0 (web server)
+See [SETUP.md](SETUP.md) for detailed installation instructions and troubleshooting.
+
+### 2. Verify Installation
+
+```bash
+# Check AutoDock Vina command-line tool
+vina --version
+# Expected output: AutoDock Vina v1.2.5-mod
+
+# Check Python packages
+python -c "import vina, rdkit, meeko; print('All packages installed successfully')"
+```
+
+**Important Note for Apple Silicon Users:**
+
+The AutoDock Vina command-line tool (`vina`) needs to be built from source because the bioconda package contains an outdated binary (i386/PowerPC) that doesn't work on modern Macs.
+
+If `vina --version` fails with "bad CPU type in executable", follow the build instructions in [SETUP.md](SETUP.md#bad-cpu-type-in-executable-vina-apple-silicon).
 
 ### 3. Run the Web Server
 
@@ -271,24 +311,187 @@ Process each batch file sequentially:
 
 ---
 
-### Step 5: Prepare Structures for AutoDock
+### Step 5: Convert PDB Structures to PDBQT Format
 
-After downloading predicted PDB files:
+After downloading ColabFold results from Google Drive, convert all PDB files to PDBQT format for AutoDock Vina:
 
-1. **Select best models**: Use `*_rank_001_*.pdb` files (highest confidence)
+#### 5.1 Organize Downloaded Files
 
-2. **Quality check**: Review pLDDT scores in JSON files
-   - pLDDT > 90: Very high confidence
-   - pLDDT 70-90: Good confidence
-   - pLDDT < 70: Low confidence (use with caution)
+Create folder structure in your project:
 
-3. **Prepare for docking:**
-   - Remove water molecules
-   - Add hydrogens
-   - Calculate partial charges
-   - Define binding sites
+```bash
+mkdir -p protein_folds
+```
 
-4. **Run AutoDock docking** with your ligands of interest
+Copy downloaded ColabFold output folders to `protein_folds/`:
+
+```
+protein_folds/
+├── Fold_batch_001/
+│   ├── 2_BcLipase_original_unrelaxed_rank_001_*.pdb
+│   ├── 2_BcLipase_V126A_unrelaxed_rank_001_*.pdb
+│   ├── 2_BcLipase_V126R_unrelaxed_rank_001_*.pdb
+│   └── ... (30 PDB files)
+├── Fold_batch_002/
+│   └── ... (30 PDB files)
+└── ...
+```
+
+#### 5.2 Run Batch Conversion
+
+Convert all PDB files to PDBQT format using OpenBabel:
+
+```bash
+# Process all folders in protein_folds/
+python src/convert_pdb_to_pdbqt.py
+
+# Or process specific folder
+python src/convert_pdb_to_pdbqt.py protein_folds/Fold_batch_001/
+```
+
+**What this does:**
+- Finds all `.pdb` files recursively in ColabFold output folders
+- Converts each to PDBQT format using OpenBabel with rigid receptor flag (`-xr`)
+- Saves to `{folder_name}_pdbqt/` directories (e.g., `Fold_batch_001_pdbqt/`)
+- Provides progress tracking and statistics
+- Handles errors and timeouts gracefully (60s per file)
+
+#### 5.3 Output Structure
+
+```
+protein_folds/
+├── Fold_batch_001/                  # Original PDB files
+│   ├── 2_BcLipase_V126A_*.pdb
+│   └── ...
+├── Fold_batch_001_pdbqt/            # Converted PDBQT files ← NEW
+│   ├── 2_BcLipase_V126A_*.pdbqt
+│   └── ...
+├── Fold_batch_002/
+│   └── ...
+├── Fold_batch_002_pdbqt/            # Converted PDBQT files ← NEW
+│   └── ...
+└── ...
+```
+
+#### 5.4 Verify Conversion
+
+The script will output:
+```
+======================================================================
+Processing: Fold_batch_001
+Output to: Fold_batch_001_pdbqt
+======================================================================
+Found 30 PDB file(s)
+
+  [  1/30] ✓ 2_BcLipase_original_unrelaxed_rank_001.pdb
+  [  2/30] ✓ 2_BcLipase_V126A_unrelaxed_rank_001.pdb
+  [  3/30] ✓ 2_BcLipase_V126R_unrelaxed_rank_001.pdb
+  ...
+  [ 30/30] ✓ 2_BcLipase_T217Y_unrelaxed_rank_001.pdb
+
+======================================================================
+SUMMARY
+======================================================================
+Folders processed: 1
+Total PDB files:   30
+✓ Converted:       30
+✗ Failed:          0
+Success rate:      100.0%
+
+✅ All conversions completed successfully!
+
+Output location: /Users/xinnuo/Desktop/AutoDock/protein_folds
+PDBQT files are ready for AutoDock Vina docking.
+```
+
+**Note:** You may see kekulization warnings like:
+```
+*** Open Babel Warning in PerceiveBondOrders
+Failed to kekulize aromatic bonds
+```
+This is **normal and safe to ignore** for protein receptors. AutoDock Vina doesn't use bond orders for receptors, only atom types (which are correctly assigned).
+
+#### 5.5 Quality Check (Optional)
+
+Before docking, review pLDDT confidence scores from ColabFold JSON files:
+
+- **pLDDT > 90**: Very high confidence
+- **pLDDT 70-90**: Good confidence
+- **pLDDT < 70**: Low confidence (use with caution)
+
+Select `*_rank_001_*.pdb` files as they have the highest confidence.
+
+---
+
+### Step 6: Run AutoDock Vina Docking
+
+Now you're ready to run molecular docking with your prepared PDBQT structures:
+
+#### 6.1 Prepare Ligand
+
+Convert your ligand to PDBQT format using meeko:
+
+```bash
+# From MOL2 file
+mk_prepare_ligand.py -i ligand.mol2 -o ligand.pdbqt
+
+# From SDF file
+mk_prepare_ligand.py -i ligand.sdf -o ligand.pdbqt
+
+# From SMILES
+mk_prepare_ligand.py -i ligand.smi -o ligand.pdbqt
+```
+
+#### 6.2 Run Docking
+
+Run AutoDock Vina for each receptor:
+
+```bash
+vina --receptor protein_folds/Fold_batch_001_pdbqt/2_BcLipase_V126A_*.pdbqt \
+     --ligand ligand.pdbqt \
+     --center_x 25.0 --center_y 30.0 --center_z 10.0 \
+     --size_x 20.0 --size_y 20.0 --size_z 20.0 \
+     --out docking_results/2_BcLipase_V126A_docked.pdbqt \
+     --log docking_results/2_BcLipase_V126A_log.txt
+```
+
+**Define binding site coordinates** (`--center_x/y/z` and `--size_x/y/z`):
+- Use known binding site from literature/structure
+- Or use AutoDock Tools to visualize and define the box
+- Box size typically 20-30 Å per dimension
+
+#### 6.3 Batch Docking Script (Optional)
+
+For docking all mutations, create a shell script:
+
+```bash
+#!/bin/bash
+# batch_docking.sh
+
+LIGAND="ligand.pdbqt"
+CENTER_X=25.0
+CENTER_Y=30.0
+CENTER_Z=10.0
+SIZE_X=20.0
+SIZE_Y=20.0
+SIZE_Z=20.0
+
+mkdir -p docking_results
+
+for receptor in protein_folds/*_pdbqt/*.pdbqt; do
+    basename=$(basename "$receptor" .pdbqt)
+    echo "Docking: $basename"
+
+    vina --receptor "$receptor" \
+         --ligand "$LIGAND" \
+         --center_x $CENTER_X --center_y $CENTER_Y --center_z $CENTER_Z \
+         --size_x $SIZE_X --size_y $SIZE_Y --size_z $SIZE_Z \
+         --out "docking_results/${basename}_docked.pdbqt" \
+         --log "docking_results/${basename}_log.txt"
+done
+```
+
+Run with: `bash batch_docking.sh`
 
 ---
 
@@ -296,30 +499,74 @@ After downloading predicted PDB files:
 
 ```
 AutoDock/
-├── README.md                          # This file
-├── requirements.txt                   # Python dependencies
+├── README.md                          # Main documentation
+├── SETUP.md                           # Detailed setup guide
+├── requirements.txt                   # Python packages (pip)
+├── environment.yml                    # Complete environment (conda + pip)
 ├── user_interface/
 │   └── app.py                        # Flask web server
 ├── src/
 │   ├── mutation.py                   # Generate mutations
 │   ├── mutation_to_FASTA.py          # Convert to FASTA batches
+│   ├── convert_pdb_to_pdbqt.py       # Batch PDB to PDBQT conversion
 │   └── README_mutation_to_FASTA.md   # FASTA conversion docs
-└── protein_squences/
-    ├── {protein_name}.json           # Original protein + positions
-    ├── {protein_name}_mutations.json # All mutations
-    └── {protein_name}_FASTA/         # FASTA batch files
-        ├── {protein_name}_batch_001.fasta
-        ├── {protein_name}_batch_002.fasta
-        └── ...
+├── protein_squences/
+│   ├── {protein_name}.json           # Original protein + positions
+│   ├── {protein_name}_mutations.json # All mutations
+│   └── {protein_name}_FASTA/         # FASTA batch files
+│       ├── {protein_name}_batch_001.fasta
+│       ├── {protein_name}_batch_002.fasta
+│       └── ...
+└── protein_folds/                     # ColabFold outputs and PDBQT files
+    ├── Fold_batch_001/               # ColabFold PDB outputs
+    │   └── *.pdb
+    ├── Fold_batch_001_pdbqt/         # Converted PDBQT files
+    │   └── *.pdbqt
+    └── ...
 ```
+
+## Installed Packages
+
+### Molecular Docking & Structure Analysis
+- **AutoDock Vina** (v1.2.5) - Molecular docking command-line tool
+  - ⚠️ **Built from source** (bioconda package is broken on macOS)
+  - See [SETUP.md](SETUP.md) for build instructions
+- **vina** (1.2.7) - Python bindings for AutoDock Vina (pip package)
+- **OpenBabel** - Chemical file format converter (install via conda: `conda install -c conda-forge openbabel`)
+  - Used for PDB to PDBQT conversion in `convert_pdb_to_pdbqt.py`
+- **meeko** (0.7.1) - Molecule preparation for ligands
+- **rdkit** (2025.9.3) - Cheminformatics and molecular modeling
+- **prody** (2.6.1) - Protein structure analysis
+- **biopython** (1.87) - Biological computation tools
+- **gemmi** (0.7.5) - Crystallography and structural biology
+
+### Web Interface
+- **Flask** (3.0.0) - Web framework for mutation selection interface
+
+### Scientific Computing
+- **numpy** (2.4.6) - Numerical computing
+- **scipy** (1.17.1) - Scientific algorithms
+
+### Build Dependencies (conda)
+- **boost-cpp** (1.78.0) - C++ Boost libraries
+- **boost** (1.78.0) - Boost with headers (required for vina build)
+- **swig** (4.2.0) - Interface compiler
+
+See [requirements.txt](requirements.txt), [environment.yml](environment.yml), and [backup_requirements.txt](backup_requirements.txt) for complete package lists.
 
 ---
 
 ## Example: Complete Workflow
 
 ```bash
-# 1. Start the web server
+# 0. Setup environment (first time only)
+CONDA_SUBDIR=osx-64 conda env create -f environment.yml
 conda activate autodock
+
+# If vina binary needs to be built (Apple Silicon), see SETUP.md
+# This is a one-time setup step
+
+# 1. Start the web server
 python user_interface/app.py
 
 # 2. Use web interface (http://localhost:5001)
@@ -343,7 +590,22 @@ python src/mutation_to_FASTA.py protein_squences/2_BcLipase_mutations.json
 # - batch_002.fasta → 30 PDB structures
 # - ... (repeat for all batches)
 
-# 7. Download PDB files and run AutoDock docking
+# 7. Download PDB files from Google Drive to protein_folds/
+# Copy Fold_batch_001/, Fold_batch_002/, etc. to protein_folds/
+
+# 8. Convert PDB structures to PDBQT format
+python src/convert_pdb_to_pdbqt.py
+# Output: protein_folds/Fold_batch_001_pdbqt/, Fold_batch_002_pdbqt/, etc.
+
+# 9. Prepare ligand for docking
+mk_prepare_ligand.py -i ligand.mol2 -o ligand.pdbqt
+
+# 10. Run AutoDock Vina docking
+vina --receptor protein_folds/Fold_batch_001_pdbqt/2_BcLipase_V126A_*.pdbqt \
+     --ligand ligand.pdbqt \
+     --center_x 25.0 --center_y 30.0 --center_z 10.0 \
+     --size_x 20.0 --size_y 20.0 --size_z 20.0 \
+     --out docking_results/2_BcLipase_V126A_docked.pdbqt
 ```
 
 ---
@@ -363,7 +625,9 @@ For 6 mutation positions (120 mutations total):
 | ColabFold batch 3 | 3-6 hours | 30 PDB files |
 | ColabFold batch 4 | 3-6 hours | 30 PDB files |
 | ColabFold batch 5 | 1-2 hours | 1 PDB file |
-| **Total** | **~1-2 days** | **121 structures** |
+| Download from Drive | 10 minutes | 121 PDB files |
+| Convert to PDBQT | 2-5 minutes | 121 PDBQT files |
+| **Total** | **~1-2 days** | **121 docking-ready structures** |
 
 ---
 
